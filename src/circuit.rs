@@ -7,15 +7,22 @@ use plonky2::iop::witness::{PartialWitness, Witness};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_field::extension_field::Extendable;
 
-pub struct Sha512Targets<const L: usize> {
-    pub message: [BoolTarget; L],
-    pub digest: [BoolTarget; 512],
+pub struct Sha512Targets {
+    pub message: Vec<BoolTarget>,
+    pub digest: Vec<BoolTarget>,
 }
 
-pub fn make_circuits<F: RichField + Extendable<D>, const D: usize, const L: usize>(
-    builder: &mut CircuitBuilder<F, D>) -> Sha512Targets<L> {
-    let mut message = [builder.add_virtual_bool_target(); L];
-    let mut digest = [builder.add_virtual_bool_target(); 512];
+pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>, meg_len: usize) -> Sha512Targets {
+    let mut message = Vec::new();
+    let mut digest = Vec::new();
+
+    for _ in 0..meg_len {
+        message.push(builder.add_virtual_bool_target());
+    }
+    for _ in 0..512 {
+        digest.push(builder.constant_bool(false));
+    }
 
     Sha512Targets {
         message,

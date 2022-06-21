@@ -28,7 +28,7 @@ criterion = "0.3.5"
 tynm = "0.1.6"
 num_cpus = "1.13.1"
 sha2 = "0.10"
-
+bit-vec = "0.6"
 
 [profile.release]
 opt-level = 3

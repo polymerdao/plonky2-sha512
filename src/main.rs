@@ -3,8 +3,7 @@ use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2::plonk::circuit_data::CircuitConfig;
 use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 use sha2::{Sha512, Digest};
-use plonky2_sha512::circuit::make_circuits;
-use bit_vec::BitVec;
+use plonky2_sha512::circuit::{array_to_bits, make_circuits};
 use anyhow::Result;
 
 pub fn prove_sha512(msg: &[u8]) -> Result<()> {
@@ -13,11 +12,11 @@ pub fn prove_sha512(msg: &[u8]) -> Result<()> {
     let hash = hasher.finalize();
     println!("Hash: {:#04X}", hash);
 
-    let msg_bits = BitVec::from_bytes(msg);
-    let hash_bits = BitVec::from_bytes(&hash.to_vec());
+    let msg_bits = array_to_bits(msg);
+    let hash_bits = array_to_bits(&hash.to_vec());
 
-    println!("{:?}", msg_bits);
-    println!("{:?}", hash_bits);
+    //println!("{:?}", msg_bits);
+    //println!("{:?}", hash_bits);
 
     let len = msg.len() * 8;
     const D: usize = 2;
@@ -28,13 +27,11 @@ pub fn prove_sha512(msg: &[u8]) -> Result<()> {
     let mut pw = PartialWitness::new();
 
     for i in 0..len {
-        let b = msg_bits[i];
-        pw.set_bool_target(targets.message[i], b);
+        pw.set_bool_target(targets.message[i], msg_bits[i]);
     }
 
     for i in 0..512 {
-        let b = hash_bits[i];
-        if b {
+        if hash_bits[i] {
             builder.assert_one(targets.digest[i].target);
         } else {
             builder.assert_zero(targets.digest[i].target);

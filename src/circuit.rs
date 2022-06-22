@@ -2,13 +2,20 @@ use plonky2::hash::hash_types::RichField;
 use plonky2::iop::target::BoolTarget;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_field::extension_field::Extendable;
+use plonky2_ecdsa::gadgets::biguint::{BigUintTarget, CircuitBuilderBiguint};
+use num::bigint::BigUint;
+use num::FromPrimitive;
+use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
+use crate::split_base::CircuitBuilderSplit;
 
+#[rustfmt::skip]
 pub const H512_512: [u64; 8] = [
     0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
     0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
 ];
 
 /// Constants necessary for SHA-512 family of digests.
+#[rustfmt::skip]
 pub const K64: [u64; 80] = [
     0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
     0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
@@ -37,50 +44,60 @@ pub struct Sha512Targets {
     pub digest: Vec<BoolTarget>,
 }
 
-pub fn array_to_bits(bytes: &[u8]) -> Vec<bool> {
-    let len = bytes.len();
-    let mut ret = Vec::new();
-    for i in 0..len {
-        for j in 0..8 {
-            let b = (bytes[i] >> (7 - j)) & 1;
-            ret.push(b == 1);
+pub struct U64BitsTargets {
+    bits: Vec<BoolTarget>,
+}
+
+fn u64_to_targets<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>, num: u64) -> U64BitsTargets {
+    let mut bits = Vec::new();
+    for i in 0..64 {
+        let b = (num >> (63 - i)) & 1;
+        bits.push(builder.constant_bool(b == 1));
+    }
+    U64BitsTargets {
+        bits
+    }
+}
+
+fn u64_bits_add<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>, a: U64BitsTargets, b: U64BitsTargets) -> U64BitsTargets {
+    let mut bits = Vec::new();
+    for i in 0..64 {
+        bits.push(builder.add_virtual_bool_target());
+    }
+
+    U64BitsTargets { bits }
+}
+
+fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: BigUintTarget,
+) -> Vec<BoolTarget> {
+    let mut res = Vec::new();
+    for i in (0..2).rev() {
+        let bit_targets = builder.split_le_base::<2>(a.get_limb(i).0, 32);
+        for j in (0..32).rev() {
+            res.push(BoolTarget::new_unsafe(bit_targets[j]));
         }
     }
-    ret
+    res
 }
 
-fn u64_to_bytes(u64s: &[u64]) -> Vec<u8> {
-    let mut ret = Vec::new();
-
-    for i in 0..u64s.len() {
-        let x = u64s[i];
-        ret.push(((x >> 56) & 0xff) as u8);
-        ret.push(((x >> 48) & 0xff) as u8);
-        ret.push(((x >> 40) & 0xff) as u8);
-        ret.push(((x >> 32) & 0xff) as u8);
-        ret.push(((x >> 24) & 0xff) as u8);
-        ret.push(((x >> 16) & 0xff) as u8);
-        ret.push(((x >> 8) & 0xff) as u8);
-        ret.push(((x >> 0) & 0xff) as u8);
-    }
-
-    ret
-}
-
-fn init_state() -> Vec<BoolTarget> {
-    let mut ret = Vec::new();
-
-    let bytes = u64_to_bytes(&H512_512);
-    let bits = array_to_bits(bytes.as_slice());
-
-    ret
-}
+// fn sigma0<F: RichField + Extendable<D>, const D: usize>(
+//     builder: &mut CircuitBuilder<F, D>,
+//     a: BigUintTarget,
+// ) -> BigUintTarget {
+//
+// }
 
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
 // Bits:      msg            | 100...000 |    L
 pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>, msg_len_in_bits: u128) -> Sha512Targets {
+    builder: &mut CircuitBuilder<F, D>,
+    msg_len_in_bits: u128,
+) -> Sha512Targets {
     let mut message = Vec::new();
     let mut digest = Vec::new();
     let block_count = (msg_len_in_bits + 129 + 1023) / 1024;
@@ -96,18 +113,72 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
         message.push(builder.constant_bool(false));
     }
     for i in 0..128 {
-        let b = (msg_len_in_bits >> (127 - i)) & 1;
+        let b = ((msg_len_in_bits as u128) >> (127 - i)) & 1;
         message.push(builder.constant_bool(b == 1));
     }
 
-    for _ in 0..block_count {}
-
-    for _ in 0..512 {
-        digest.push(builder.constant_bool(false));
+    // init states
+    let mut state = Vec::new();
+    for i in 0..8 {
+        state.push(builder.constant_biguint(&BigUint::from_u64(H512_512[i]).unwrap()));
     }
 
-    Sha512Targets {
-        message,
-        digest,
+    for blk in 0..block_count {
+        let mut x = Vec::new();
+        let mut a = state[0].clone();
+        let mut b = state[1].clone();
+        let mut c = state[2].clone();
+        let mut d = state[3].clone();
+        let mut e = state[4].clone();
+        let mut f = state[5].clone();
+        let mut g = state[6].clone();
+        let mut h = state[7].clone();
+
+        for i in 0..16 {
+            let index = blk as usize * 1024 + i * 64;
+            let u32_0 = builder.le_sum(message[index..index + 32].iter().rev());
+            let u32_1 = builder.le_sum(message[index + 32..index + 64].iter().rev());
+
+            let mut u32_targets = Vec::new();
+            u32_targets.push(U32Target(u32_1));
+            u32_targets.push(U32Target(u32_0));
+            let mut big_int = BigUintTarget { limbs: u32_targets };
+
+            x.push(big_int);
+            let mut t1 = h.clone();
+            t1 = builder.add_biguint(&t1, &x[i]);
+
+            let mut t2 = a.clone(); //delete
+
+            h = g;
+            g = f;
+            f = e;
+            e = builder.add_biguint(&d, &t1);
+            d = c;
+            c = b;
+            b = a;
+            a = builder.add_biguint(&t1, &t2);
+        }
+        for i in 16..80 {}
+
+        state[0] = builder.add_biguint(&state[0], &a);
+        state[1] = builder.add_biguint(&state[1], &b);
+        state[2] = builder.add_biguint(&state[2], &c);
+        state[3] = builder.add_biguint(&state[3], &d);
+        state[4] = builder.add_biguint(&state[4], &e);
+        state[5] = builder.add_biguint(&state[5], &f);
+        state[6] = builder.add_biguint(&state[6], &g);
+        state[7] = builder.add_biguint(&state[7], &h);
     }
+
+    for i in 0..8 {
+        for j in (0..2).rev() {
+            let bit_targets = builder.split_le_base::<2>(state[i].get_limb(j).0, 32);
+            for k in (0..32).rev() {
+                digest.push(BoolTarget::new_unsafe(bit_targets[k]));
+            }
+        }
+    }
+
+    Sha512Targets { message, digest }
 }

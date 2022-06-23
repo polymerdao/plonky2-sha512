@@ -349,8 +349,22 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             let s0 = sigma0(builder, &x[(i + 1) & 0x0f]);
             let s1 = sigma1(builder, &x[(i + 14) & 0x0f]);
 
-            let t1 = s0;
-            let t2 = s1;
+            let s0_add_s1 = builder.add_biguint(&s0, &s1);
+            let s0_add_s1_add_x = builder.add_biguint(&s0_add_s1, &x[(i + 9) & 0xf]);
+            x[i & 0xf] = builder.add_biguint(&x[i & 0xf], &s0_add_s1_add_x);
+
+            let big_sigma0_a = big_sigma0(builder, &a);
+            let big_sigma1_e = big_sigma1(builder, &e);
+            let ch_e_f_g = ch(builder, &e, &f, &g);
+            let maj_a_b_c = maj(builder, &a, &b, &c);
+
+            let h_add_sigma1 = builder.add_biguint(&h, &big_sigma1_e);
+            let h_add_sigma1_add_ch_e_f_g = builder.add_biguint(&h_add_sigma1, &ch_e_f_g);
+            let h_add_sigma1_add_ch_e_f_g_add_k512 =
+                builder.add_biguint(&h_add_sigma1_add_ch_e_f_g, &k512[i]);
+
+            let t1 = builder.add_biguint(&x[i & 0xf], &h_add_sigma1_add_ch_e_f_g_add_k512);
+            let t2 = builder.add_biguint(&big_sigma0_a, &maj_a_b_c);
 
             h = g;
             g = f;

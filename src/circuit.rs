@@ -70,6 +70,19 @@ fn rotate64(y: usize) -> Vec<usize> {
     res
 }
 
+// a + b - 2ab
+fn xor<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: BoolTarget,
+    b: BoolTarget,
+) -> BoolTarget {
+    let ab = builder.mul(a.target, b.target);
+    let a_add_b = builder.add(a.target, b.target);
+    let two = builder.two();
+    let two_ab = builder.mul(two, ab);
+    BoolTarget::new_unsafe(builder.sub(a_add_b, two_ab))
+}
+
 /*
 a ^ b ^ c = a+b+c - 2*a*b - 2*a*c - 2*b*c + 4*a*b*c
           = a*( 1 - 2*b - 2*c + 4*b*c ) + b + c - 2*b*c
@@ -88,10 +101,10 @@ fn xor3<F: RichField + Extendable<D>, const D: usize>(
     let two_m = builder.add(m, m);
     let four_m = builder.add(two_m, two_m);
     let one = builder.one();
-    let one_minus_two_b = builder.sub(one, two_b);
-    let one_minus_two_b_minus_two_c = builder.sub(one_minus_two_b, two_c);
-    let one_minus_two_b_minus_two_c_add_four_m = builder.add(one_minus_two_b_minus_two_c, four_m);
-    let mut res = builder.mul(a.target, one_minus_two_b_minus_two_c_add_four_m);
+    let one_sub_two_b = builder.sub(one, two_b);
+    let one_sub_two_b_sub_two_c = builder.sub(one_sub_two_b, two_c);
+    let one_sub_two_b_sub_two_c_add_four_m = builder.add(one_sub_two_b_sub_two_c, four_m);
+    let mut res = builder.mul(a.target, one_sub_two_b_sub_two_c_add_four_m);
     res = builder.add(res, b.target);
     res = builder.add(res, c.target);
 
@@ -154,19 +167,58 @@ fn big_sigma1<F: RichField + Extendable<D>, const D: usize>(
 }
 
 /*
-define Ch(x, y, z)    (((x) & (y)) ^ ((~(x)) & (z)))
 ch = a&b ^ (!a)&c
    = a*(b-c) + c
  */
+fn ch<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &BigUintTarget,
+    b: &BigUintTarget,
+    c: &BigUintTarget,
+) -> BigUintTarget {
+    let a_bits = biguint_to_bits_target(builder, a);
+    let b_bits = biguint_to_bits_target(builder, b);
+    let c_bits = biguint_to_bits_target(builder, c);
+    let mut res_bits = Vec::new();
+    for i in 0..64 {
+        let b_sub_c = builder.sub(b_bits[i].target, c_bits[i].target);
+        let a_mul_b_sub_c = builder.mul(a_bits[i].target, b_sub_c);
+        let a_mul_b_sub_c_add_c = builder.add(a_mul_b_sub_c, c_bits[i].target);
+        res_bits.push(BoolTarget::new_unsafe(a_mul_b_sub_c_add_c));
+    }
+    bits_to_biguint_target(builder, res_bits)
+}
 
 /*
-define Maj(x, y, z)   (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
 maj = a&b ^ a&c ^ b&c
     = a*b   +  a*c  +  b*c  -  2*a*b*c
     = a*( b + c - 2*b*c ) + b*c
     = a*( b + c - 2*m ) + m
 where m = b*c
  */
+fn maj<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &BigUintTarget,
+    b: &BigUintTarget,
+    c: &BigUintTarget,
+) -> BigUintTarget {
+    let a_bits = biguint_to_bits_target(builder, a);
+    let b_bits = biguint_to_bits_target(builder, b);
+    let c_bits = biguint_to_bits_target(builder, c);
+    let mut res_bits = Vec::new();
+    for i in 0..64 {
+        let m = builder.mul(b_bits[i].target, c_bits[i].target);
+        let two = builder.two();
+        let two_m = builder.mul(two, m);
+        let b_add_c = builder.add(b_bits[i].target, c_bits[i].target);
+        let b_add_c_sub_two_m = builder.sub(b_add_c, two_m);
+        let a_mul_b_add_c_sub_two_m = builder.mul(a_bits[i].target, b_add_c_sub_two_m);
+        let res = builder.add(a_mul_b_add_c_sub_two_m, m);
+
+        res_bits.push(BoolTarget::new_unsafe(res));
+    }
+    bits_to_biguint_target(builder, res_bits)
+}
 
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
@@ -230,10 +282,14 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             let mut t1 = h.clone();
             let big_sigma1_e = big_sigma1(builder, &e);
             t1 = builder.add_biguint(&t1, &big_sigma1_e);
+            let ch_e_f_g = ch(builder, &e, &f, &g);
+            t1 = builder.add_biguint(&t1, &ch_e_f_g);
             t1 = builder.add_biguint(&t1, &k512[i]);
             t1 = builder.add_biguint(&t1, &x[i]);
 
-            let t2 = big_sigma0(builder, &a);
+            let mut t2 = big_sigma0(builder, &a);
+            let maj_a_b_c = maj(builder, &a, &b, &c);
+            t2 = builder.add_biguint(&t2, &maj_a_b_c);
 
             h = g;
             g = f;

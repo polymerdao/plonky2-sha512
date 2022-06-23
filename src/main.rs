@@ -3,26 +3,14 @@ use plonky2::iop::witness::{PartialWitness, Witness};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2::plonk::circuit_data::CircuitConfig;
 use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-use plonky2_sha512::circuit::make_circuits;
+use plonky2_sha512::circuit::{array_to_bits, make_circuits};
 use sha2::{Digest, Sha512};
-
-fn array_to_bits(bytes: &[u8]) -> Vec<bool> {
-    let len = bytes.len();
-    let mut ret = Vec::new();
-    for i in 0..len {
-        for j in 0..8 {
-            let b = (bytes[i] >> (7 - j)) & 1;
-            ret.push(b == 1);
-        }
-    }
-    ret
-}
 
 pub fn prove_sha512(msg: &[u8]) -> Result<()> {
     let mut hasher = Sha512::new();
     hasher.update(msg);
     let hash = hasher.finalize();
-    println!("Hash: {:#04X}", hash);
+    // println!("Hash: {:#04X}", hash);
 
     let msg_bits = array_to_bits(msg);
     let len = msg.len() * 8;
@@ -37,28 +25,9 @@ pub fn prove_sha512(msg: &[u8]) -> Result<()> {
         pw.set_bool_target(targets.message[i], msg_bits[i]);
     }
 
-    let expected_res = vec![
-        0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1,
-        0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0,
-        1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-        0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1,
-        1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-        0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0,
-        1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1,
-        1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0,
-        1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1,
-        1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1,
-        1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0,
-        1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1,
-        0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1,
-        0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1,
-        0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0,
-        0, 1,
-    ];
+    let expected_res = array_to_bits(hash.as_slice());
     for i in 0..expected_res.len() {
-        if expected_res[i] == 1 {
+        if expected_res[i] {
             builder.assert_one(targets.digest[i].target);
         } else {
             builder.assert_zero(targets.digest[i].target);

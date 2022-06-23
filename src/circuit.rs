@@ -214,6 +214,11 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
         state.push(builder.constant_biguint(&BigUint::from_u64(H512_512[i]).unwrap()));
     }
 
+    let mut k512 = Vec::new();
+    for i in 0..80 {
+        k512.push(builder.constant_biguint(&BigUint::from_u64(K64[i]).unwrap()));
+    }
+
     for blk in 0..block_count {
         let mut x = Vec::new();
         let mut a = state[0].clone();
@@ -239,6 +244,7 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             let mut t1 = h.clone();
             let big_sigma1_e = big_sigma1(builder, &e);
             t1 = builder.add_biguint(&t1, &big_sigma1_e);
+            t1 = builder.add_biguint(&t1, &k512[i]);
             t1 = builder.add_biguint(&t1, &x[i]);
 
             let mut t2 = big_sigma0(builder, &a);

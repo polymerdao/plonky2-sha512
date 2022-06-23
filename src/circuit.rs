@@ -161,6 +161,27 @@ fn big_sigma0<F: RichField + Extendable<D>, const D: usize>(
     bits_to_biguint_target(builder, res_bits)
 }
 
+//define Sigma1(x)    (ROTATE((x),14) ^ ROTATE((x),18) ^ ROTATE((x),41))
+fn big_sigma1<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &BigUintTarget,
+) -> BigUintTarget {
+    let a_bits = biguint_to_bits_target(builder, a);
+    let rotate28 = rotate64(14);
+    let rotate34 = rotate64(18);
+    let rotate39 = rotate64(41);
+    let mut res_bits = Vec::new();
+    for i in 0..64 {
+        res_bits.push(xor3(
+            builder,
+            a_bits[rotate28[i]],
+            a_bits[rotate34[i]],
+            a_bits[rotate39[i]],
+        ));
+    }
+    bits_to_biguint_target(builder, res_bits)
+}
+
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
 // Bits:      msg            | 100...000 |    L
@@ -216,6 +237,8 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
 
             x.push(big_int);
             let mut t1 = h.clone();
+            let big_sigma1_e = big_sigma1(builder, &e);
+            t1 = builder.add_biguint(&t1, &big_sigma1_e);
             t1 = builder.add_biguint(&t1, &x[i]);
 
             let mut t2 = big_sigma0(builder, &a);

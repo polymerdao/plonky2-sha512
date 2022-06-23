@@ -18,11 +18,12 @@ pub trait CircuitBuilderSplit<F: RichField + Extendable<D>, const D: usize> {
     fn assert_leading_zeros(&mut self, x: Target, leading_zeros: u32);
     fn num_ext_arithmetic_ops_per_gate(&self) -> usize;
     fn num_base_arithmetic_ops_per_gate(&self) -> usize;
-    fn le_sum(&mut self, bits: impl Iterator<Item=impl Borrow<BoolTarget>>) -> Target;
+    fn le_sum(&mut self, bits: impl Iterator<Item = impl Borrow<BoolTarget>>) -> Target;
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderSplit<F, D>
-for CircuitBuilder<F, D> {
+    for CircuitBuilder<F, D>
+{
     /// Split the given element into a list of targets, where each one represents a
     /// base-B limb of the element, with little-endian ordering.
     fn split_le_base<const B: usize>(&mut self, x: Target, num_limbs: usize) -> Vec<Target> {
@@ -53,7 +54,7 @@ for CircuitBuilder<F, D> {
 
     /// Takes an iterator of bits `(b_i)` and returns `sum b_i * 2^i`, i.e.,
     /// the number with little-endian bit representation given by `bits`.
-    fn le_sum(&mut self, bits: impl Iterator<Item=impl Borrow<BoolTarget>>) -> Target {
+    fn le_sum(&mut self, bits: impl Iterator<Item = impl Borrow<BoolTarget>>) -> Target {
         let bits = bits.map(|b| *b.borrow()).collect_vec();
         let num_bits = bits.len();
         if num_bits == 0 {
@@ -125,11 +126,11 @@ mod tests {
     use plonky2_field::field_types::Field;
     use rand::{thread_rng, Rng};
 
+    use crate::split_base::CircuitBuilderSplit;
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::circuit_builder::CircuitBuilder;
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-    use crate::split_base::CircuitBuilderSplit;
 
     #[test]
     fn test_split_base() -> Result<()> {

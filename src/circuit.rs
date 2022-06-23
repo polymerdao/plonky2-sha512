@@ -1,12 +1,12 @@
+use crate::split_base::CircuitBuilderSplit;
+use num::bigint::BigUint;
+use num::FromPrimitive;
 use plonky2::hash::hash_types::RichField;
 use plonky2::iop::target::BoolTarget;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2_field::extension_field::Extendable;
 use plonky2_ecdsa::gadgets::biguint::{BigUintTarget, CircuitBuilderBiguint};
-use num::bigint::BigUint;
-use num::FromPrimitive;
+use plonky2_field::extension_field::Extendable;
 use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
-use crate::split_base::CircuitBuilderSplit;
 
 #[rustfmt::skip]
 pub const H512_512: [u64; 8] = [
@@ -49,19 +49,22 @@ pub struct U64BitsTargets {
 }
 
 fn u64_to_targets<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>, num: u64) -> U64BitsTargets {
+    builder: &mut CircuitBuilder<F, D>,
+    num: u64,
+) -> U64BitsTargets {
     let mut bits = Vec::new();
     for i in 0..64 {
         let b = (num >> (63 - i)) & 1;
         bits.push(builder.constant_bool(b == 1));
     }
-    U64BitsTargets {
-        bits
-    }
+    U64BitsTargets { bits }
 }
 
 fn u64_bits_add<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>, a: U64BitsTargets, b: U64BitsTargets) -> U64BitsTargets {
+    builder: &mut CircuitBuilder<F, D>,
+    a: U64BitsTargets,
+    b: U64BitsTargets,
+) -> U64BitsTargets {
     let mut bits = Vec::new();
     for i in 0..64 {
         bits.push(builder.add_virtual_bool_target());
@@ -72,7 +75,7 @@ fn u64_bits_add<F: RichField + Extendable<D>, const D: usize>(
 
 fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    a: BigUintTarget,
+    a: &BigUintTarget,
 ) -> Vec<BoolTarget> {
     let mut res = Vec::new();
     for i in (0..2).rev() {
@@ -84,12 +87,79 @@ fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
     res
 }
 
-// fn sigma0<F: RichField + Extendable<D>, const D: usize>(
-//     builder: &mut CircuitBuilder<F, D>,
-//     a: BigUintTarget,
-// ) -> BigUintTarget {
-//
-// }
+//define ROTATE(x, y)  (((x)>>(y)) | ((x)<<(64-(y))))
+fn rotate64(y: usize) -> Vec<usize> {
+    let mut res = Vec::new();
+    for i in 64 - y..64 {
+        res.push(i);
+    }
+    for i in 0..64 - y {
+        res.push(i);
+    }
+    res
+}
+
+/*
+a ^ b ^ c = a+b+c - 2*a*b - 2*a*c - 2*b*c + 4*a*b*c
+          = a*( 1 - 2*b - 2*c + 4*b*c ) + b + c - 2*b*c
+          = a*( 1 - 2*b -2*c + 4*m ) + b + c - 2*m
+where m = b*c
+*/
+fn xor3<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: BoolTarget,
+    b: BoolTarget,
+    c: BoolTarget,
+) -> BoolTarget {
+    let m = builder.mul(b.target, c.target);
+    let two_b = builder.add(b.target, b.target);
+    let two_c = builder.add(c.target, c.target);
+    let two_m = builder.add(m, m);
+    let four_m = builder.add(two_m, two_m);
+    let one = builder.one();
+    let one_minus_two_b = builder.sub(one, two_b);
+    let one_minus_two_b_minus_two_c = builder.sub(one_minus_two_b, two_c);
+    let one_minus_two_b_minus_two_c_add_four_m = builder.add(one_minus_two_b_minus_two_c, four_m);
+    let mut res = builder.mul(a.target, one_minus_two_b_minus_two_c_add_four_m);
+    res = builder.add(res, b.target);
+    res = builder.add(res, c.target);
+
+    BoolTarget::new_unsafe(builder.sub(res, two_m))
+}
+
+fn bits_to_biguint_target<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    bits_target: Vec<BoolTarget>,
+) -> BigUintTarget {
+    assert_eq!(bits_target.len(), 64);
+    let u32_0 = builder.le_sum(bits_target[0..32].iter().rev());
+    let u32_1 = builder.le_sum(bits_target[32..64].iter().rev());
+    let mut u32_targets = Vec::new();
+    u32_targets.push(U32Target(u32_1));
+    u32_targets.push(U32Target(u32_0));
+    BigUintTarget { limbs: u32_targets }
+}
+
+//define Sigma0(x)    (ROTATE((x),28) ^ ROTATE((x),34) ^ ROTATE((x),39))
+fn big_sigma0<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &BigUintTarget,
+) -> BigUintTarget {
+    let a_bits = biguint_to_bits_target(builder, a);
+    let rotate28 = rotate64(28);
+    let rotate34 = rotate64(34);
+    let rotate39 = rotate64(39);
+    let mut res_bits = Vec::new();
+    for i in 0..64 {
+        res_bits.push(xor3(
+            builder,
+            a_bits[rotate28[i]],
+            a_bits[rotate34[i]],
+            a_bits[rotate39[i]],
+        ));
+    }
+    bits_to_biguint_target(builder, res_bits)
+}
 
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
@@ -148,7 +218,7 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             let mut t1 = h.clone();
             t1 = builder.add_biguint(&t1, &x[i]);
 
-            let mut t2 = a.clone(); //delete
+            let mut t2 = big_sigma0(builder, &a);
 
             h = g;
             g = f;

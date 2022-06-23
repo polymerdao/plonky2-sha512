@@ -6,7 +6,7 @@ use plonky2::iop::target::BoolTarget;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_ecdsa::gadgets::biguint::{BigUintTarget, CircuitBuilderBiguint};
 use plonky2_field::extension_field::Extendable;
-use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
+use plonky2_u32::gadgets::arithmetic_u32::U32Target;
 
 #[rustfmt::skip]
 pub const H512_512: [u64; 8] = [
@@ -44,35 +44,6 @@ pub struct Sha512Targets {
     pub digest: Vec<BoolTarget>,
 }
 
-pub struct U64BitsTargets {
-    bits: Vec<BoolTarget>,
-}
-
-fn u64_to_targets<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    num: u64,
-) -> U64BitsTargets {
-    let mut bits = Vec::new();
-    for i in 0..64 {
-        let b = (num >> (63 - i)) & 1;
-        bits.push(builder.constant_bool(b == 1));
-    }
-    U64BitsTargets { bits }
-}
-
-fn u64_bits_add<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    a: U64BitsTargets,
-    b: U64BitsTargets,
-) -> U64BitsTargets {
-    let mut bits = Vec::new();
-    for i in 0..64 {
-        bits.push(builder.add_virtual_bool_target());
-    }
-
-    U64BitsTargets { bits }
-}
-
 fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
@@ -104,7 +75,7 @@ a ^ b ^ c = a+b+c - 2*a*b - 2*a*c - 2*b*c + 4*a*b*c
           = a*( 1 - 2*b - 2*c + 4*b*c ) + b + c - 2*b*c
           = a*( 1 - 2*b -2*c + 4*m ) + b + c - 2*m
 where m = b*c
-*/
+ */
 fn xor3<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: BoolTarget,
@@ -182,6 +153,21 @@ fn big_sigma1<F: RichField + Extendable<D>, const D: usize>(
     bits_to_biguint_target(builder, res_bits)
 }
 
+/*
+define Ch(x, y, z)    (((x) & (y)) ^ ((~(x)) & (z)))
+ch = a&b ^ (!a)&c
+   = a*(b-c) + c
+ */
+
+/*
+define Maj(x, y, z)   (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+maj = a&b ^ a&c ^ b&c
+    = a*b   +  a*c  +  b*c  -  2*a*b*c
+    = a*( b + c - 2*b*c ) + b*c
+    = a*( b + c - 2*m ) + m
+where m = b*c
+ */
+
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
 // Bits:      msg            | 100...000 |    L
@@ -238,7 +224,7 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             let mut u32_targets = Vec::new();
             u32_targets.push(U32Target(u32_1));
             u32_targets.push(U32Target(u32_0));
-            let mut big_int = BigUintTarget { limbs: u32_targets };
+            let big_int = BigUintTarget { limbs: u32_targets };
 
             x.push(big_int);
             let mut t1 = h.clone();
@@ -247,7 +233,7 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             t1 = builder.add_biguint(&t1, &k512[i]);
             t1 = builder.add_biguint(&t1, &x[i]);
 
-            let mut t2 = big_sigma0(builder, &a);
+            let t2 = big_sigma0(builder, &a);
 
             h = g;
             g = f;
@@ -258,7 +244,7 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             b = a;
             a = builder.add_biguint(&t1, &t2);
         }
-        for i in 16..80 {}
+        // for i in 16..80 {}
 
         state[0] = builder.add_biguint(&state[0], &a);
         state[1] = builder.add_biguint(&state[1], &b);

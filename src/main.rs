@@ -25,11 +25,6 @@ pub fn prove_sha512(msg: &[u8]) -> Result<()> {
     println!("Hash: {:#04X}", hash);
 
     let msg_bits = array_to_bits(msg);
-    let hash_bits = array_to_bits(&hash.to_vec());
-
-    //println!("{:?}", msg_bits);
-    //println!("{:?}", hash_bits);
-
     let len = msg.len() * 8;
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;

@@ -1,2 +1,2 @@
 pub mod circuit;
-mod split_base;
+pub mod split_base;

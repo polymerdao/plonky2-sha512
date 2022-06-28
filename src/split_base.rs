@@ -123,7 +123,6 @@ impl<F: Field, const B: usize> SimpleGenerator<F> for BaseSumGenerator<B> {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use plonky2_field::field_types::Field;
     use rand::{thread_rng, Rng};
 
     use crate::split_base::CircuitBuilderSplit;

@@ -56,7 +56,7 @@ pub fn array_to_bits(bytes: &[u8]) -> Vec<bool> {
     ret
 }
 
-fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
+pub fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> Vec<BoolTarget> {
@@ -68,6 +68,19 @@ fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
         }
     }
     res
+}
+
+pub fn bits_to_biguint_target<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    bits_target: Vec<BoolTarget>,
+) -> BigUintTarget {
+    assert_eq!(bits_target.len(), 64);
+    let u32_0 = builder.le_sum(bits_target[0..32].iter().rev());
+    let u32_1 = builder.le_sum(bits_target[32..64].iter().rev());
+    let mut u32_targets = Vec::new();
+    u32_targets.push(U32Target(u32_1));
+    u32_targets.push(U32Target(u32_0));
+    BigUintTarget { limbs: u32_targets }
 }
 
 // define ROTATE(x, y)  (((x)>>(y)) | ((x)<<(64-(y))))
@@ -121,19 +134,6 @@ fn xor3<F: RichField + Extendable<D>, const D: usize>(
     res = builder.add(res, c.target);
 
     BoolTarget::new_unsafe(builder.sub(res, two_m))
-}
-
-fn bits_to_biguint_target<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    bits_target: Vec<BoolTarget>,
-) -> BigUintTarget {
-    assert_eq!(bits_target.len(), 64);
-    let u32_0 = builder.le_sum(bits_target[0..32].iter().rev());
-    let u32_1 = builder.le_sum(bits_target[32..64].iter().rev());
-    let mut u32_targets = Vec::new();
-    u32_targets.push(U32Target(u32_1));
-    u32_targets.push(U32Target(u32_0));
-    BigUintTarget { limbs: u32_targets }
 }
 
 //define Sigma0(x)    (ROTATE((x),28) ^ ROTATE((x),34) ^ ROTATE((x),39))

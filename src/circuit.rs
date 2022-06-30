@@ -6,7 +6,7 @@ use plonky2::iop::target::BoolTarget;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_ecdsa::gadgets::biguint::{BigUintTarget, CircuitBuilderBiguint};
 use plonky2_field::extension::Extendable;
-use plonky2_u32::gadgets::arithmetic_u32::U32Target;
+use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
 
 #[rustfmt::skip]
 pub const H512_512: [u64; 8] = [
@@ -61,7 +61,7 @@ pub fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize, cons
     a: &BigUintTarget,
 ) -> Vec<BoolTarget> {
     let mut res = Vec::new();
-    for i in (0..B).rev() {
+    for i in (0..a.num_limbs()).rev() {
         let bit_targets = builder.split_le_base::<B>(a.get_limb(i).0, 32);
         for j in (0..32).rev() {
             res.push(BoolTarget::new_unsafe(bit_targets[j]));
@@ -280,6 +280,34 @@ fn maj<F: RichField + Extendable<D>, const D: usize>(
     bits_to_biguint_target(builder, res_bits)
 }
 
+fn add_biguint_2limbs<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &BigUintTarget,
+    b: &BigUintTarget,
+) -> BigUintTarget {
+    assert_eq!(a.num_limbs(), 2);
+    assert_eq!(b.num_limbs(), 2);
+
+    let mut combined_limbs = vec![];
+    let mut carry = builder.zero_u32();
+    for i in 0..2 {
+        let a_limb = (i < a.num_limbs())
+            .then(|| a.limbs[i])
+            .unwrap_or_else(|| builder.zero_u32());
+        let b_limb = (i < b.num_limbs())
+            .then(|| b.limbs[i])
+            .unwrap_or_else(|| builder.zero_u32());
+
+        let (new_limb, new_carry) = builder.add_many_u32(&[carry, a_limb, b_limb]);
+        carry = new_carry;
+        combined_limbs.push(new_limb);
+    }
+
+    BigUintTarget {
+        limbs: combined_limbs,
+    }
+}
+
 // padded_msg_len = block_count x 1024 bits
 // Size: msg_len_in_bits (L) |  p bits   | 128 bits
 // Bits:      msg            | 100...000 |    L
@@ -341,65 +369,65 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
             x.push(big_int);
             let mut t1 = h.clone();
             let big_sigma1_e = big_sigma1(builder, &e);
-            t1 = builder.add_biguint(&t1, &big_sigma1_e);
+            t1 = add_biguint_2limbs(builder, &t1, &big_sigma1_e);
             let ch_e_f_g = ch(builder, &e, &f, &g);
-            t1 = builder.add_biguint(&t1, &ch_e_f_g);
-            t1 = builder.add_biguint(&t1, &k512[i]);
-            t1 = builder.add_biguint(&t1, &x[i]);
+            t1 = add_biguint_2limbs(builder, &t1, &ch_e_f_g);
+            t1 = add_biguint_2limbs(builder, &t1, &k512[i]);
+            t1 = add_biguint_2limbs(builder, &t1, &x[i]);
 
             let mut t2 = big_sigma0(builder, &a);
             let maj_a_b_c = maj(builder, &a, &b, &c);
-            t2 = builder.add_biguint(&t2, &maj_a_b_c);
+            t2 = add_biguint_2limbs(builder, &t2, &maj_a_b_c);
 
             h = g;
             g = f;
             f = e;
-            e = builder.add_biguint(&d, &t1);
+            e = add_biguint_2limbs(builder, &d, &t1);
             d = c;
             c = b;
             b = a;
-            a = builder.add_biguint(&t1, &t2);
+            a = add_biguint_2limbs(builder, &t1, &t2);
         }
 
         for i in 16..80 {
             let s0 = sigma0(builder, &x[(i + 1) & 0x0f]);
             let s1 = sigma1(builder, &x[(i + 14) & 0x0f]);
 
-            let s0_add_s1 = builder.add_biguint(&s0, &s1);
-            let s0_add_s1_add_x = builder.add_biguint(&s0_add_s1, &x[(i + 9) & 0xf]);
-            x[i & 0xf] = builder.add_biguint(&x[i & 0xf], &s0_add_s1_add_x);
+            let s0_add_s1 = add_biguint_2limbs(builder, &s0, &s1);
+            let s0_add_s1_add_x = add_biguint_2limbs(builder, &s0_add_s1, &x[(i + 9) & 0xf]);
+            x[i & 0xf] = add_biguint_2limbs(builder, &x[i & 0xf], &s0_add_s1_add_x);
 
             let big_sigma0_a = big_sigma0(builder, &a);
             let big_sigma1_e = big_sigma1(builder, &e);
             let ch_e_f_g = ch(builder, &e, &f, &g);
             let maj_a_b_c = maj(builder, &a, &b, &c);
 
-            let h_add_sigma1 = builder.add_biguint(&h, &big_sigma1_e);
-            let h_add_sigma1_add_ch_e_f_g = builder.add_biguint(&h_add_sigma1, &ch_e_f_g);
+            let h_add_sigma1 = add_biguint_2limbs(builder, &h, &big_sigma1_e);
+            let h_add_sigma1_add_ch_e_f_g = add_biguint_2limbs(builder, &h_add_sigma1, &ch_e_f_g);
             let h_add_sigma1_add_ch_e_f_g_add_k512 =
-                builder.add_biguint(&h_add_sigma1_add_ch_e_f_g, &k512[i]);
+                add_biguint_2limbs(builder, &h_add_sigma1_add_ch_e_f_g, &k512[i]);
 
-            let t1 = builder.add_biguint(&x[i & 0xf], &h_add_sigma1_add_ch_e_f_g_add_k512);
-            let t2 = builder.add_biguint(&big_sigma0_a, &maj_a_b_c);
+            let t1 = add_biguint_2limbs(builder, &x[i & 0xf], &h_add_sigma1_add_ch_e_f_g_add_k512);
+            let t2 = add_biguint_2limbs(builder, &big_sigma0_a, &maj_a_b_c);
 
             h = g;
             g = f;
             f = e;
-            e = builder.add_biguint(&d, &t1);
+            e = add_biguint_2limbs(builder, &d, &t1);
             d = c;
             c = b;
             b = a;
-            a = builder.add_biguint(&t1, &t2);
+            a = add_biguint_2limbs(builder, &t1, &t2);
         }
 
-        state[0] = builder.add_biguint(&state[0], &a);
-        state[1] = builder.add_biguint(&state[1], &b);
-        state[2] = builder.add_biguint(&state[2], &c);
-        state[3] = builder.add_biguint(&state[3], &d);
-        state[4] = builder.add_biguint(&state[4], &e);
-        state[5] = builder.add_biguint(&state[5], &f);
-        state[6] = builder.add_biguint(&state[6], &g);
-        state[7] = builder.add_biguint(&state[7], &h);
+        state[0] = add_biguint_2limbs(builder, &state[0], &a);
+        state[1] = add_biguint_2limbs(builder, &state[1], &b);
+        state[2] = add_biguint_2limbs(builder, &state[2], &c);
+        state[3] = add_biguint_2limbs(builder, &state[3], &d);
+        state[4] = add_biguint_2limbs(builder, &state[4], &e);
+        state[5] = add_biguint_2limbs(builder, &state[5], &f);
+        state[6] = add_biguint_2limbs(builder, &state[6], &g);
+        state[7] = add_biguint_2limbs(builder, &state[7], &h);
     }
 
     for i in 0..8 {

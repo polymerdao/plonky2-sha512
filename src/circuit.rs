@@ -56,13 +56,13 @@ pub fn array_to_bits(bytes: &[u8]) -> Vec<bool> {
     ret
 }
 
-pub fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize>(
+pub fn biguint_to_bits_target<F: RichField + Extendable<D>, const D: usize, const B: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> Vec<BoolTarget> {
     let mut res = Vec::new();
-    for i in (0..2).rev() {
-        let bit_targets = builder.split_le_base::<2>(a.get_limb(i).0, 32);
+    for i in (0..B).rev() {
+        let bit_targets = builder.split_le_base::<B>(a.get_limb(i).0, 32);
         for j in (0..32).rev() {
             res.push(BoolTarget::new_unsafe(bit_targets[j]));
         }
@@ -145,7 +145,7 @@ fn big_sigma0<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> BigUintTarget {
-    let a_bits = biguint_to_bits_target(builder, a);
+    let a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
     let rotate28 = rotate64(28);
     let rotate34 = rotate64(34);
     let rotate39 = rotate64(39);
@@ -166,7 +166,7 @@ fn big_sigma1<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> BigUintTarget {
-    let a_bits = biguint_to_bits_target(builder, a);
+    let a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
     let rotate28 = rotate64(14);
     let rotate34 = rotate64(18);
     let rotate39 = rotate64(41);
@@ -187,7 +187,7 @@ fn sigma0<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> BigUintTarget {
-    let mut a_bits = biguint_to_bits_target(builder, a);
+    let mut a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
     a_bits.push(builder.constant_bool(false));
     let rotate1 = rotate64(1);
     let rotate8 = rotate64(8);
@@ -209,7 +209,7 @@ fn sigma1<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &BigUintTarget,
 ) -> BigUintTarget {
-    let mut a_bits = biguint_to_bits_target(builder, a);
+    let mut a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
     a_bits.push(builder.constant_bool(false));
     let rotate19 = rotate64(19);
     let rotate61 = rotate64(61);
@@ -236,9 +236,9 @@ fn ch<F: RichField + Extendable<D>, const D: usize>(
     b: &BigUintTarget,
     c: &BigUintTarget,
 ) -> BigUintTarget {
-    let a_bits = biguint_to_bits_target(builder, a);
-    let b_bits = biguint_to_bits_target(builder, b);
-    let c_bits = biguint_to_bits_target(builder, c);
+    let a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
+    let b_bits = biguint_to_bits_target::<F, D, 2>(builder, b);
+    let c_bits = biguint_to_bits_target::<F, D, 2>(builder, c);
     let mut res_bits = Vec::new();
     for i in 0..64 {
         let b_sub_c = builder.sub(b_bits[i].target, c_bits[i].target);
@@ -262,9 +262,9 @@ fn maj<F: RichField + Extendable<D>, const D: usize>(
     b: &BigUintTarget,
     c: &BigUintTarget,
 ) -> BigUintTarget {
-    let a_bits = biguint_to_bits_target(builder, a);
-    let b_bits = biguint_to_bits_target(builder, b);
-    let c_bits = biguint_to_bits_target(builder, c);
+    let a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
+    let b_bits = biguint_to_bits_target::<F, D, 2>(builder, b);
+    let c_bits = biguint_to_bits_target::<F, D, 2>(builder, c);
     let mut res_bits = Vec::new();
     for i in 0..64 {
         let m = builder.mul(b_bits[i].target, c_bits[i].target);

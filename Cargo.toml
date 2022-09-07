@@ -6,11 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "33622c1e" }
-plonky2_util = { git = "https://github.com/mir-protocol/plonky2", rev = "33622c1e" }
-plonky2_field = { git = "https://github.com/mir-protocol/plonky2", rev = "33622c1e" }
-plonky2_u32 = { git = "https://github.com/mir-protocol/plonky2", rev = "33622c1e" }
-plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "33622c1e" }
+plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "8c275c49" }
+plonky2_util = { git = "https://github.com/mir-protocol/plonky2", rev = "8c275c49" }
+plonky2_field = { git = "https://github.com/mir-protocol/plonky2", rev = "8c275c49" }
+plonky2_u32 = { git = "https://github.com/mir-protocol/plonky2", rev = "8c275c49" }
+plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "8c275c49" }
 itertools = "0.10.0"
 rayon = "1.5.1"
 serde = { version = "1.0", features = ["derive"] }
@@ -34,4 +34,4 @@ opt-level = 3
 opt-level = 3
 
 [profile.test]
-opt-level = 3
+opt-level = 1

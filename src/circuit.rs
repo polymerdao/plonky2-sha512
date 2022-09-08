@@ -167,16 +167,16 @@ fn big_sigma1<F: RichField + Extendable<D>, const D: usize>(
     a: &BigUintTarget,
 ) -> BigUintTarget {
     let a_bits = biguint_to_bits_target::<F, D, 2>(builder, a);
-    let rotate28 = rotate64(14);
-    let rotate34 = rotate64(18);
-    let rotate39 = rotate64(41);
+    let rotate14 = rotate64(14);
+    let rotate18 = rotate64(18);
+    let rotate41 = rotate64(41);
     let mut res_bits = Vec::new();
     for i in 0..64 {
         res_bits.push(xor3(
             builder,
-            a_bits[rotate28[i]],
-            a_bits[rotate34[i]],
-            a_bits[rotate39[i]],
+            a_bits[rotate14[i]],
+            a_bits[rotate18[i]],
+            a_bits[rotate41[i]],
         ));
     }
     bits_to_biguint_target(builder, res_bits)
